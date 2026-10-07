@@ -66,7 +66,18 @@ public class GameSocketHandler extends TextWebSocketHandler {
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         try {
             Map<String, String> q = queryParams(session);
-            rooms.get(q.get("roomId")).removeSession(q.get("playerId"));
+            String roomId = q.get("roomId");
+            String playerId = q.get("playerId");
+            GameRoom room = rooms.get(roomId);
+            if (!room.isStarted()) {
+                // Lobby cleanup: a disconnected client leaves the lobby so the
+                // player list (and a future game) never gets stuck on ghosts.
+                if (room.removePlayer(playerId)) {
+                    broadcastRoom(roomId);
+                }
+            } else {
+                room.removeSession(playerId);
+            }
         } catch (Exception ignored) {
             // room already gone; nothing to clean up
         }

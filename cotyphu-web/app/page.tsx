@@ -18,6 +18,7 @@ export default function LobbyPage() {
 
   const goToRoom = (roomId: string, playerId: string) => {
     sessionStorage.setItem(`arena:${roomId}:playerId`, playerId);
+    sessionStorage.setItem(`arena:${roomId}:playerName`, name.trim());
     localStorage.setItem(NAME_KEY, name.trim());
     router.push(`/room/${roomId}`);
   };
@@ -53,7 +54,8 @@ export default function LobbyPage() {
 
   return (
     <div className="lobby-wrap">
-      <div className="lobby-card">
+      <div className="lobby-card pop-in">
+        <img src="/logo.png" alt="Sân Chơi Tuổi Thơ" className="lobby-logo floaty" />
         <h1>🎲 Sân Chơi Tuổi Thơ</h1>
         <p className="sub">Cờ Tỷ Phú multiplayer — server quản lý toàn bộ trạng thái</p>
 

@@ -1,6 +1,8 @@
 "use client";
 
-import { PLAYER_COLORS, PlayerView, TyPhuSnapshot } from "../lib/types";
+import { GROUP_COLORS, PlayerView, TyPhuSnapshot } from "../lib/types";
+import { KIND_LABEL, netWorth, rentEstimate } from "../lib/gameInfo";
+import Avatar from "./Avatar";
 
 function ownsFullSet(snapshot: TyPhuSnapshot, player: PlayerView, tileIndex: number): boolean {
   const tile = snapshot.board[tileIndex];
@@ -19,16 +21,86 @@ export function PlayerList({ snapshot, myId }: { snapshot: TyPhuSnapshot; myId: 
           key={p.id}
           className={`player-row${p.id === snapshot.currentPlayerId && snapshot.phase === "IN_PROGRESS" ? " active" : ""}`}
         >
-          <div className="dot" style={{ background: PLAYER_COLORS[i % PLAYER_COLORS.length] }} />
-          <div className="pname">
-            {p.name}
-            {p.id === myId && " (bạn)"}
+          <Avatar index={i} name={p.name} size={36} />
+          <div className="pinfo">
+            <div className="pname">
+              {p.name}
+              {p.id === myId && " (bạn)"}
+            </div>
+            <div className="psub">
+              {p.owned.length} đất · tài sản ~{netWorth(snapshot, p)}
+            </div>
           </div>
           {p.inJail && <span className="badge jail">Tù</span>}
           {p.bankrupt && <span className="badge">Phá sản</span>}
           <div className="pmoney">{p.money}</div>
         </div>
       ))}
+    </div>
+  );
+}
+
+export function TileDetail({
+  snapshot,
+  tileIndex,
+  onClose,
+}: {
+  snapshot: TyPhuSnapshot;
+  tileIndex: number | null;
+  onClose: () => void;
+}) {
+  if (tileIndex == null) return null;
+  const tile = snapshot.board[tileIndex];
+  if (!tile) return null;
+  const owner = tile.ownerId ? snapshot.players.find((p) => p.id === tile.ownerId) : null;
+  const houses = owner?.owned.find((o) => o.tileIndex === tile.index)?.houses ?? 0;
+  const rent = rentEstimate(snapshot, tile);
+
+  return (
+    <div className="card tile-detail pop-in">
+      {tile.group && GROUP_COLORS[tile.group] && (
+        <div className="td-colorbar" style={{ background: GROUP_COLORS[tile.group] }} />
+      )}
+      <div className="td-head">
+        <h3 style={{ margin: 0 }}>{tile.name}</h3>
+        <button className="td-close" onClick={onClose} aria-label="Đóng">
+          ✕
+        </button>
+      </div>
+      <div className="td-rows">
+        <div>
+          <span>Loại ô</span>
+          <b>{KIND_LABEL[tile.kind] ?? tile.kind}</b>
+        </div>
+        {tile.price != null && (
+          <div>
+            <span>Giá mua</span>
+            <b>{tile.price}</b>
+          </div>
+        )}
+        {tile.houseCost != null && (
+          <div>
+            <span>Giá xây nhà</span>
+            <b>{tile.houseCost}</b>
+          </div>
+        )}
+        <div>
+          <span>Chủ sở hữu</span>
+          <b>{owner ? owner.name : "Ngân hàng"}</b>
+        </div>
+        {houses > 0 && (
+          <div>
+            <span>Công trình</span>
+            <b>{houses >= 5 ? "🏨 Khách sạn" : `🏠 ${houses} nhà`}</b>
+          </div>
+        )}
+        {rent && (
+          <div>
+            <span>Tiền thuê</span>
+            <b>{rent}</b>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -107,6 +179,7 @@ export function ActionBar({
               Kết thúc lượt
             </button>
           )}
+          <div className="kbd-hint">Phím tắt: R gieo · B mua · E kết thúc</div>
         </div>
       )}
     </div>
@@ -114,13 +187,16 @@ export function ActionBar({
 }
 
 export function EventLog({ snapshot }: { snapshot: TyPhuSnapshot }) {
+  const total = snapshot.log.length;
   const items = [...snapshot.log].reverse();
   return (
     <div className="card">
       <h3>Diễn biến</h3>
       <div className="log">
         {items.map((line, i) => (
-          <div key={i}>{line}</div>
+          <div key={total - 1 - i} className="slide-in">
+            {line}
+          </div>
         ))}
       </div>
     </div>

@@ -2,6 +2,7 @@ package com.vietgames.arena.web;
 
 import com.vietgames.arena.platform.GameRoom;
 import com.vietgames.arena.platform.RoomManager;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,7 +37,19 @@ public class LobbyController {
     public Map<String, String> joinRoom(
             @PathVariable String roomId,
             @RequestParam String name) {
-        return Map.of("playerId", rooms.joinRoom(roomId, name));
+        String playerId = rooms.joinRoom(roomId, name);
+        socketHandler.broadcastRoom(roomId);
+        return Map.of("playerId", playerId);
+    }
+
+    @DeleteMapping("/rooms/{roomId}/leave")
+    public Map<String, Object> leaveRoom(
+            @PathVariable String roomId,
+            @RequestParam String playerId) {
+        GameRoom room = rooms.get(roomId);
+        room.removePlayer(playerId);
+        socketHandler.broadcastRoom(roomId);
+        return Map.of("ok", true);
     }
 
     @PostMapping("/rooms/{roomId}/start")

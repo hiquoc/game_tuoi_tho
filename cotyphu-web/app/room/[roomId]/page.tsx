@@ -1,12 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useGameSocket } from "../../../hooks/useGameSocket";
-import { getRoom, startGame } from "../../../lib/api";
-import { isLobby, PLAYER_COLORS, RoomSnapshot } from "../../../lib/types";
+import { useCardDraw } from "../../../hooks/useCardDraw";
+import { joinRoom, leaveRoom, startGame } from "../../../lib/api";
+import { isLobby } from "../../../lib/types";
 import Board, { BoardCenter } from "../../../components/Board";
-import { ActionBar, EventLog, PlayerList } from "../../../components/SidePanel";
+import { ActionBar, EventLog, PlayerList, TileDetail } from "../../../components/SidePanel";
+import LobbyView from "../../../components/LobbyView";
+import CardDrawModal from "../../../components/CardDrawModal";
+
+const pidKey = (roomId: string) => `arena:${roomId}:playerId`;
+const nameKey = (roomId: string) => `arena:${roomId}:playerName`;
 
 export default function RoomPage() {
   const params = useParams();
@@ -14,56 +20,93 @@ export default function RoomPage() {
   const roomId = params.roomId as string;
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [selectedTile, setSelectedTile] = useState<number | null>(null);
+  const rejoining = useRef(false);
+  const leaving = useRef(false);
 
   useEffect(() => {
-    const pid = sessionStorage.getItem(`arena:${roomId}:playerId`);
+    const pid = sessionStorage.getItem(pidKey(roomId));
     if (!pid) router.replace("/");
     else setPlayerId(pid);
   }, [roomId, router]);
 
   const { snapshot, error, connected, send, clearError } = useGameSocket(roomId, playerId);
+  const gameSnapshot = snapshot && !isLobby(snapshot) ? snapshot : null;
+  const { draw, dismiss } = useCardDraw(gameSnapshot);
 
-  // Fallback: poll the lobby until the game starts (covers any missed WS broadcast).
+  // Keyboard shortcuts: R roll, B buy, E end turn (only on your turn).
   useEffect(() => {
-    if (!playerId || (snapshot && !isLobby(snapshot))) return;
-    let alive = true;
-    const poll = async () => {
+    if (!gameSnapshot || !playerId) return;
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      const me = gameSnapshot.players.find((p) => p.id === playerId);
+      if (!me || me.bankrupt || gameSnapshot.currentPlayerId !== playerId) return;
+      const k = e.key.toLowerCase();
+      if (k === "r" && !gameSnapshot.hasRolled) send("ROLL_DICE");
+      else if (k === "b" && gameSnapshot.pendingBuy != null) send("BUY_PROPERTY");
+      else if (k === "e" && gameSnapshot.hasRolled && gameSnapshot.pendingBuy == null)
+        send("END_TURN");
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [gameSnapshot, playerId, send]);
+
+  // Auto re-join: the server drops disconnected clients from the lobby, so a
+  // refresh can leave us with a playerId the lobby no longer knows. In that
+  // case join again with the stored name and keep playing.
+  useEffect(() => {
+    if (!snapshot || !isLobby(snapshot) || !playerId || rejoining.current || leaving.current)
+      return;
+    if (snapshot.players[playerId]) return;
+    const name = sessionStorage.getItem(nameKey(roomId));
+    if (!name) {
+      router.replace("/");
+      return;
+    }
+    rejoining.current = true;
+    joinRoom(roomId, name)
+      .then(({ playerId: nid }) => {
+        sessionStorage.setItem(pidKey(roomId), nid);
+        setPlayerId(nid);
+      })
+      .catch(() => router.replace("/"))
+      .finally(() => {
+        rejoining.current = false;
+      });
+  }, [snapshot, playerId, roomId, router]);
+
+  const handleLeave = useCallback(async () => {
+    leaving.current = true;
+    if (playerId) {
       try {
-        const data: RoomSnapshot = await getRoom(roomId);
-        if (alive && (!snapshot || isLobby(snapshot))) {
-          // Only adopt REST state while still in lobby; WS owns the game.
-          window.dispatchEvent(new CustomEvent("arena:lobby", { detail: data }));
-        }
+        await leaveRoom(roomId, playerId);
       } catch {
-        /* server may not be up yet */
+        /* already gone */
       }
-    };
-    const t = setInterval(poll, 2500);
-    poll();
-    return () => {
-      alive = false;
-      clearInterval(t);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, playerId, snapshot === null || isLobby(snapshot)]);
+      sessionStorage.removeItem(pidKey(roomId));
+      sessionStorage.removeItem(nameKey(roomId));
+    }
+    router.push("/");
+  }, [roomId, playerId, router]);
 
-  // Adopt lobby snapshots delivered via the polling fallback.
-  const [lobbyFallback, setLobbyFallback] = useState<RoomSnapshot | null>(null);
-  useEffect(() => {
-    const handler = (e: Event) =>
-      setLobbyFallback((e as CustomEvent<RoomSnapshot>).detail);
-    window.addEventListener("arena:lobby", handler);
-    return () => window.removeEventListener("arena:lobby", handler);
-  }, []);
-
-  const effective: RoomSnapshot | null = snapshot ?? lobbyFallback;
+  const handleStart = useCallback(async () => {
+    setStarting(true);
+    try {
+      await startGame(roomId);
+    } catch {
+      /* the WS broadcast carries the new state */
+    } finally {
+      setStarting(false);
+    }
+  }, [roomId]);
 
   if (!playerId) return null;
 
-  if (!effective) {
+  if (!snapshot) {
     return (
       <div className="lobby-wrap">
-        <div className="lobby-card">
+        <div className="lobby-card pop-in">
           <p>Đang kết nối tới phòng...</p>
           <div className="conn off">Kiểm tra server backend đã chạy ở cổng 8080</div>
         </div>
@@ -71,60 +114,34 @@ export default function RoomPage() {
     );
   }
 
-  if (isLobby(effective)) {
-    const names = Object.entries(effective.players);
+  if (isLobby(snapshot)) {
     return (
-      <div className="lobby-wrap">
-        <div className="wait-card">
-          <h2>Phòng chờ</h2>
-          <div className="room-code">{effective.roomId}</div>
-          <p className="sub" style={{ opacity: 0.7, fontSize: 13 }}>
-            Gửi mã này cho bạn bè để vào phòng (2–6 người)
-          </p>
-          <ul className="wait-list">
-            {names.map(([id, name], i) => (
-              <li key={id}>
-                <div className="dot" style={{ background: PLAYER_COLORS[i % PLAYER_COLORS.length] }} />
-                {name}
-                {id === playerId && " (bạn)"}
-              </li>
-            ))}
-          </ul>
-          <button
-            className="btn"
-            disabled={starting || names.length < 2}
-            onClick={async () => {
-              setStarting(true);
-              try {
-                await startGame(effective.roomId);
-              } catch {
-                /* WS broadcast / polling will surface the state */
-              } finally {
-                setStarting(false);
-              }
-            }}
-          >
-            {starting ? "Đang bắt đầu..." : `Bắt đầu ván (${names.length}/6)`}
-          </button>
-          {names.length < 2 && (
-            <div className="form-error">Cần ít nhất 2 người để bắt đầu</div>
-          )}
-          <div className="conn" style={{ marginTop: 12 }}>
-            {connected ? "Đã kết nối" : "Đang kết nối lại..."}
-          </div>
-        </div>
-      </div>
+      <LobbyView
+        roomId={roomId}
+        players={snapshot.players}
+        playerId={playerId}
+        connected={connected}
+        starting={starting}
+        onStart={handleStart}
+        onLeave={handleLeave}
+      />
     );
   }
 
-  const winner = effective.winnerId
-    ? effective.players.find((p) => p.id === effective.winnerId)
+  const winner = snapshot.winnerId
+    ? snapshot.players.find((p) => p.id === snapshot.winnerId)
     : null;
 
   return (
     <div className="game-layout">
+      <CardDrawModal draw={draw} onClose={dismiss} />
       <div className="board-wrap">
-        <Board snapshot={effective} center={<BoardCenter snapshot={effective} myId={playerId} />} />
+        <Board
+          snapshot={snapshot}
+          selectedTile={selectedTile}
+          onSelectTile={setSelectedTile}
+          center={<BoardCenter snapshot={snapshot} myId={playerId} />}
+        />
       </div>
       <div className="side">
         {error && (
@@ -133,12 +150,17 @@ export default function RoomPage() {
             <button onClick={clearError}>✕</button>
           </div>
         )}
-        {effective.phase === "FINISHED" && winner && (
-          <div className="card winner-banner">🏆 {winner.name} thắng!</div>
+        {snapshot.phase === "FINISHED" && winner && (
+          <div className="card winner-banner pop-in">🏆 {winner.name} thắng!</div>
         )}
-        <PlayerList snapshot={effective} myId={playerId} />
-        <ActionBar snapshot={effective} myId={playerId} send={send} />
-        <EventLog snapshot={effective} />
+        <TileDetail
+          snapshot={snapshot}
+          tileIndex={selectedTile}
+          onClose={() => setSelectedTile(null)}
+        />
+        <PlayerList snapshot={snapshot} myId={playerId} />
+        <ActionBar snapshot={snapshot} myId={playerId} send={send} />
+        <EventLog snapshot={snapshot} />
         <div className={`conn${connected ? "" : " off"}`}>
           {connected ? "● Đã kết nối" : "○ Đang kết nối lại..."}
         </div>

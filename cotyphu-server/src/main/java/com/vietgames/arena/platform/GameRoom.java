@@ -61,6 +61,16 @@ public class GameRoom {
         return state != null;
     }
 
+    /** Removes a player from the lobby. Only allowed before the game starts.
+     *  Used for explicit leaves and for cleaning up disconnected lobby clients. */
+    public synchronized boolean removePlayer(String playerId) {
+        if (state != null) {
+            return false;
+        }
+        sessions.remove(playerId);
+        return playerNames.remove(playerId) != null;
+    }
+
     /** Applies an action and returns the fresh snapshot for broadcast. */
     public synchronized Object apply(String playerId, GameAction action) {
         if (state == null) {
