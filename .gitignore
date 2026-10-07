@@ -1,6 +1,9 @@
-target/
-*.class
-.idea/
-.vscode/
-*.iml
+# backend
+cotyphu-server/target/
+cotyphu-server/.idea/
+# frontend
+cotyphu-web/node_modules/
+cotyphu-web/.next/
+# general
 .DS_Store
+*.log

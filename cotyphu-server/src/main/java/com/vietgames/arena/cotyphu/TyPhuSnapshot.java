@@ -38,6 +38,7 @@ public record TyPhuSnapshot(
             String kind,
             String group,
             Integer price,
+            Integer houseCost,
             String ownerId) {
     }
 }

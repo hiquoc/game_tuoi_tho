@@ -7,21 +7,30 @@ The backend is authoritative: the server owns all game state, and clients only r
 
 ```
 viet-games-arena/
-└── cotyphu-server/          # Spring Boot backend (Java 21)
-    └── src/main/java/com/vietgames/arena/
-        ├── platform/        # Game-agnostic core (reused by every future game)
-        │   ├── GameEngine.java    # State-machine contract: newGame / applyAction / snapshot / parseAction
-        │   ├── GameRoom.java      # One live game: lobby, state, WebSocket sessions (synchronized)
-        │   └── RoomManager.java   # Engine registry + room registry
-        ├── cotyphu/         # Cờ Tỷ Phú implementation
-        │   ├── Board.java         # 40-tile board with Vietnamese street names
-        │   ├── Tile.java          # Sealed tile hierarchy (Property, Station, Utility, Tax, Chance, ...)
-        │   ├── TyPhuEngine.java   # All rules: turns, rent, houses, jail, cards, bankruptcy
-        │   ├── TyPhuState.java    # Authoritative state
-        │   └── TyPhuSnapshot.java # Client-facing DTO
-        └── web/
-            ├── LobbyController.java  # REST: create/join/start room
-            └── GameSocketHandler.java# WebSocket: /ws/arena?roomId=..&playerId=..
+├── cotyphu-server/          # Spring Boot backend (Java 21)
+│   └── src/main/java/com/vietgames/arena/
+│       ├── platform/        # Game-agnostic core (reused by every future game)
+│       │   ├── GameEngine.java    # State-machine contract: newGame / applyAction / snapshot / parseAction
+│       │   ├── GameRoom.java      # One live game: lobby, state, WebSocket sessions (synchronized)
+│       │   └── RoomManager.java   # Engine registry + room registry
+│       ├── cotyphu/         # Cờ Tỷ Phú implementation
+│       │   ├── Board.java         # 40-tile board with Vietnamese street names
+│       │   ├── Tile.java          # Sealed tile hierarchy (Property, Station, Utility, Tax, Chance, ...)
+│       │   ├── TyPhuEngine.java   # All rules: turns, rent, houses, jail, cards, bankruptcy
+│       │   ├── TyPhuState.java    # Authoritative state
+│       │   └── TyPhuSnapshot.java # Client-facing DTO
+│       └── web/
+│           ├── LobbyController.java  # REST: create/join/start room
+│           └── GameSocketHandler.java# WebSocket: /ws/arena?roomId=..&playerId=..
+└── cotyphu-web/             # Next.js frontend (TypeScript, App Router)
+    ├── app/
+    │   ├── page.tsx              # Lobby: create / join room
+    │   └── room/[roomId]/page.tsx# Game screen (board + side panel)
+    ├── components/
+    │   ├── Board.tsx             # 40-tile board, tokens, owners, houses
+    │   └── SidePanel.tsx         # Players, contextual actions, event log
+    ├── hooks/useGameSocket.ts    # WebSocket client with auto-reconnect
+    └── lib/                      # API client + snapshot types
 ```
 
 ## Why this architecture
@@ -71,6 +80,25 @@ and send actions like `{"action":"ROLL_DICE"}`, `{"action":"BUY_PROPERTY"}`,
 The server replies with `{"kind":"snapshot","data":{...}}` after every action,
 or `{"kind":"error","message":"..."}` when an action is illegal.
 
+## Run the frontend
+
+```bash
+cd cotyphu-web
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`, enter your name, create a room, and share the
+room code with friends (open the same URL in other tabs to simulate players).
+If the backend runs somewhere else, set:
+
+```bash
+NEXT_PUBLIC_API_URL=http://<host>:8080 NEXT_PUBLIC_WS_URL=ws://<host>:8080 npm run dev
+```
+
+The frontend is intentionally logic-free: it renders the snapshot the server
+broadcasts and sends one of the 7 legal actions. All rules live in `TyPhuEngine`.
+
 ## Tests
 
 ```bash
@@ -83,7 +111,7 @@ out-of-turn rejection, buy-decision gating, GO salary, house building rules.
 
 ## Roadmap
 
-- [ ] Frontend (Next.js): board render, dice animation, lobby UI — AI-generated, logic-free
+- [ ] ~~Frontend (Next.js): board render, dice animation, lobby UI — AI-generated, logic-free~~ ✅ done (cotyphu-web, builds clean)
 - [ ] Auctions on declined purchases, player trading, mortgages
 - [ ] Game 2: Ô Ăn Quan (fully visible state — simplest next engine)
 - [ ] Game 3: Cờ Cá Ngựa

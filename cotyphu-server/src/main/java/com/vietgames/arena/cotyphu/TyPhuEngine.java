@@ -110,7 +110,8 @@ public class TyPhuEngine implements GameEngine {
             String owner = (t instanceof Tile.Ownable) ? ownerOf(s, t.index()) : null;
             String group = (t instanceof Tile.Property p) ? p.group().displayName() : null;
             Integer price = (t instanceof Tile.Ownable o) ? o.price() : null;
-            board.add(new TyPhuSnapshot.TileView(t.index(), t.name(), t.kind(), group, price, owner));
+            Integer houseCost = (t instanceof Tile.Property p) ? p.houseCost() : null;
+            board.add(new TyPhuSnapshot.TileView(t.index(), t.name(), t.kind(), group, price, houseCost, owner));
         }
         List<TyPhuSnapshot.PlayerView> players = s.players.stream().map(p ->
                 new TyPhuSnapshot.PlayerView(

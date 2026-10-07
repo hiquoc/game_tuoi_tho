@@ -17,9 +17,11 @@ import java.util.Map;
 public class LobbyController {
 
     private final RoomManager rooms;
+    private final GameSocketHandler socketHandler;
 
-    public LobbyController(RoomManager rooms) {
+    public LobbyController(RoomManager rooms, GameSocketHandler socketHandler) {
         this.rooms = rooms;
+        this.socketHandler = socketHandler;
     }
 
     @PostMapping("/rooms")
@@ -41,6 +43,7 @@ public class LobbyController {
     public Map<String, Object> startGame(@PathVariable String roomId) {
         GameRoom room = rooms.get(roomId);
         room.start();
+        socketHandler.broadcastRoom(roomId);
         return Map.of("ok", true, "snapshot", room.snapshot());
     }
 

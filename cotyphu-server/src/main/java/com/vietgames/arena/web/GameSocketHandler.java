@@ -82,6 +82,17 @@ public class GameSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    /** Pushes the current snapshot to every connected client in the room.
+     *  Used when the game starts (REST) so all players move to the board together. */
+    public void broadcastRoom(String roomId) {
+        try {
+            GameRoom room = rooms.get(roomId);
+            broadcast(room, Map.of("kind", "snapshot", "data", room.snapshot()));
+        } catch (Exception ignored) {
+            // best effort: lobby polling covers any stragglers
+        }
+    }
+
     private void send(WebSocketSession session, Object payload) throws Exception {
         session.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
     }
